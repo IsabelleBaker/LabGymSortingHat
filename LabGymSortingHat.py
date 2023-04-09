@@ -1,31 +1,3 @@
-"""
-
-    This function takes the <name>.jpg and <name>.avi pairs like LabGym creates 
-    and presents them to a user for sorting. It overlays on this presentation a list of user
-    definable keys to behavior mapping that can be used to move the image/animation pairs
-    to the correct output directory. IDEALLY, a "junk" option will be included in this list
-    so that if a session is terminated and restarted, images not desired will not need 
-    to be reprocessed!  
-    
-    The available user inputs while sorting will be:
-    -keys mapped to desired behaviors. (including a junk option)
-    -<right_arrow> and <left_arrow> can be used to go to next/previous pair without taking any action
-    -<u> is mapped to the multilevel undo function which undoes a category assignment and returns the pairs for sorting
-
-    inputs:
-    1) input image directory: this is the top level directory that LabGym stored image/video pairs within. There
-    will usually be subfolders with animal numbers and then the pairs within those folders. Point toward the highest
-    level folder containing all folders you want to process. It will walk them all.
-    2) output directory: the program will create a "categories" folder here and the subfolders for each
-    behavior where you will sort the images. You do not need to create these folders in advance. If the folders
-    exist already, they will be used and the output will be merged into the directory.
-    3) category name/key pairs: The input format must be category1{key1}, category2{key2}, etc. It is a good idea to
-    create a "junk" category with a key mapping to dispose of bad samples. Just remember to delete that folder before
-    doing additional processing or else you could accidentally train a "junk" behavior. Please note that the
-    key "u" is reserved for the undo function.
-
-"""
-
 import os
 import cv2
 import shutil
@@ -34,8 +6,7 @@ import wx
 import time
 import re
 from natsort import natsorted
-
-
+USE_BUFFERED_DC = True
 class SortingHat():
 
     # Set up the variables we need for SortingHat.
@@ -73,7 +44,7 @@ class SortingHat():
     # For the wxpython (gui) version, <esc> was removed as an exit because the user can just close the window.
     def prepare_hat(self, behavior_names=[], behavior_key_mapping=[],
                     input_image_directory='', output_image_directory=os.getcwd(),
-                    remove_empty_frames=True, image_display_sizes=(600, 600), undo_key='U'):
+                    remove_empty_frames=True, image_display_sizes=(600, 600), undo_key='u'):
         self.behavior_names = behavior_names
         self.behavior_key_mapping = behavior_key_mapping
         self.input_image_directory = input_image_directory
@@ -97,9 +68,8 @@ class SortingHat():
             self.category_strings.append((self.behavior_key_mapping[i]) + ': ' + self.behavior_names[i])
             if not os.path.exists(os.path.join(self.output_image_directory, 'categories', self.behavior_names[i])):
                 os.makedirs(os.path.join(self.output_image_directory, 'categories', self.behavior_names[i]))
-            self.category_directories.append(
-                os.path.join(self.output_image_directory, 'categories', self.behavior_names[i]))
-        self.category_strings.append("U: Undo")
+            self.category_directories.append(os.path.join(self.output_image_directory, 'categories', self.behavior_names[i]))
+        self.category_strings.append("u: Undo")
         self.scale_text()
         self.update_image_pointer()
 
@@ -157,7 +127,7 @@ class SortingHat():
 
             # If we want to ignore/remove pairs whose avi files have empty frames in them
             # then loop through the avi frames and make sure they ALL have some content.
-            # If ANY of the frames are empty then skip this file. 
+            # If ANY of the frames are empty then skip this file.
             # Note: it will not delete or remove the files from the directory, so this can
             # cause the appearance of residual files after a sorting session. May
             # change this behavior in the future.
@@ -219,25 +189,20 @@ class SortingHat():
                 image.SetData(self.video_frames[-1])
                 self.video_frames[-1] = image.ConvertToBitmap()
         self.timer_interval = self.video.get(cv2.CAP_PROP_FPS)
+        self.video.release()
 
 
-# This is the class to draw the actual SortingHat and receive user input.
 class SortingHatFrame(wx.Frame):
 
-    def __init__(self, parent, input_directory=os.getcwd(), output_directory=os.path.join(os.getcwd(), 'output/'),
+    def __init__(self, parent, title, input_directory=os.getcwd(), output_directory=os.path.join(os.getcwd(), 'output/'),
                  categories=["junk"], category_mapping=["0"]):
-
-        # Start by creating a basic, resizeable frame that accepts character input and is resizable.
-        # The default size was arbitrarily chosen at 1200 width and 600 height.
-        wx.Frame.__init__(self, parent, style=wx.WANTS_CHARS | wx.DEFAULT_FRAME_STYLE ^ wx.RESIZE_BORDER,
-                          title="SortingHat", size=(1200, 600))
-
+        super(SortingHatFrame, self).__init__(parent, title=title, size=(600, 300))
         # Declare a new SortingHat.
         self.sort = SortingHat()
 
         # These are sample categories which could be used.
-        # categories = ['junk', 'curling', 'crawling', 'immobile', 'rolling', 'turning', 'uncoiling']
-        # category_mapping = ['0', '1', '2', '3', '4', '5', '6']
+        #categories = ['junk', 'curling', 'crawling', 'immobile', 'rolling', 'turning', 'uncoiling']
+        #category_mapping = ['0', '1', '2', '3', '4', '5', '6']
 
         # Initialize the data into the SortingHat which we captured in the initial gui.
         # Things that must be captured in advance are categories, category_mapping, input and output directories.
@@ -247,41 +212,35 @@ class SortingHatFrame(wx.Frame):
                               input_directory,
                               output_directory,
                               True,
-                              (600, 600))
-
-        # Make the Panel that we will draw the SortingHat images onto.
-        self.panel = wx.Panel(self, wx.ID_ANY, size=(1200, 600))
-
-        # Center the SortingHatFrame on the screen.
-        self.Centre()
-
-        # Bind a timer event to the panel. This is used to play through (draw) the video frames to the panel.
-        self.panel.Bind(wx.EVT_TIMER, self.evt_timer)
-        self.panel.timer = wx.Timer(self.panel)
-
+                              (300, 600))
+        self.panel = wx.Panel(self, wx.ID_ANY, size=(0,0))
+        self.InitUI()
         # Establish the current image and video to be displayed.
         self.sort.update_image_pointer()
         self.sort.load_new_video()
         self.video_frame = 0
-
-        # Bind to the Panel the capture of key input to when a key is pressed down.
-        self.panel.Bind(wx.EVT_KEY_DOWN, self.evt_on_key_event)
-
-        # Bind the paint event to the SortingHatFrame.
-        self.Bind(wx.EVT_PAINT, self.evt_on_paint)
-
-        # Bind the resize event to the SortingHatFrame.
-        self.Bind(wx.EVT_SIZE, self.evt_on_resize)
-
         # Start the timer.
-        self.panel.timer.Start(milliseconds=(int(1000 / self.sort.timer_interval)))
+        self.timer.Start(milliseconds=(int(1000 / self.sort.timer_interval))*2)
+
+
+    def InitUI(self):
+        self.Bind(wx.EVT_PAINT, self.evt_on_paint)
+        # Bind a timer event to the panel. This is used to play through (draw) the video frames to the panel.
+        self.Bind(wx.EVT_TIMER, self.evt_timer)
+        self.timer = wx.Timer(self)
+        self.panel.Bind(wx.EVT_CHAR, self.evt_on_key_event)
+        self.Bind(wx.EVT_CHAR, self.evt_on_key_event)
+        self.Bind(wx.EVT_SIZE, self.evt_on_resize)
+        self.Centre()
+        self.Show(True)
+        self.SetFocus()
 
     # Function: restart_timer
     # Description: simple function to restart the timer with a new interval based on the current video
-    # This ensures that all samples play at their own appropriate frame rate.
+    # This ensures that all samples play at 1/2 their own appropriate frame rate.
     def restart_timer(self):
-        self.panel.timer.Stop()
-        self.panel.timer.Start(milliseconds=(int(1000 / self.sort.timer_interval)))
+        self.timer.Stop()
+        self.timer.Start(milliseconds=(int(1000 / self.sort.timer_interval)*2))
 
     # Function: evt_on_key_event
     # Description: captures key input from the user and then take the appropriate action
@@ -393,9 +352,9 @@ class SortingHatFrame(wx.Frame):
             self.restart_timer()
 
         # Run the function to paint the image to the panel.
-        self.evt_on_paint(None)
-
-        # If it is the first video frame, pause for 0.5 seconds so that 
+        self.Refresh()
+        self.Update()
+        # If it is the first video frame, pause for 0.5 seconds so that
         # users notice where the beginning of the video is at.
         if self.video_frame == 0: time.sleep(0.5)
 
@@ -428,11 +387,12 @@ class SortingHatFrame(wx.Frame):
         self.sort.load_new_video()
         self.restart_timer()
         self.sort.image_display_sizes = (int(temp[0] / 2 + 0.5), temp[1] - 20)
-        # self.panel.Size=(temp[1],temp[1])
-        # print(self.sort.image_display_sizes)
 
     def onClose(self, event):
+        self.timer.Stop()
         self.Close()
+        event.Skip()
+
 
 
 # Class: SortingHat_InitialWindow
@@ -609,12 +569,11 @@ class SortingHatInitialWindow(wx.Frame):
         elif len(self.categories) == 0:
             wx.MessageBox("No Categories Provided", "Error", wx.OK | wx.ICON_INFORMATION)
         else:
-            Hat = SortingHatFrame(None, self.input_directory, self.output_directory, self.categories, self.category_mapping)
+            Hat = SortingHatFrame(None, 'LabGym Sorting Hat', self.input_directory, self.output_directory, self.categories, self.category_mapping)
             Hat.Show()
-
-
 # Run the program.
 if __name__ == '__main__':
     app = wx.App()
     SortingHatInitialWindow('LabGym Sorting Hat')
     app.MainLoop()
+
