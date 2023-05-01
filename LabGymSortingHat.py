@@ -366,16 +366,15 @@ class SortingHatFrame(wx.Frame):
     def evt_on_paint(self, event):
 
         # This must be declared to paint on the window.
-        dc = wx.PaintDC(self)
+        dc = wx.BufferedPaintDC(self)
 
         # If it is not the last stored frame, paint it. Otherwise, go back to the first frame and then paint.
         if self.video_frame < len(self.sort.video_frames):
             frame = self.sort.video_frames[self.video_frame]
-            dc.DrawBitmap(frame, 0, 0, False)
         else:
             self.video_frame = 0
             frame = self.sort.video_frames[self.video_frame]
-            dc.DrawBitmap(frame, 0, 0, False)
+        dc.DrawBitmap(frame, 0, 0, False)
 
     # Function: evt_on_resize
     # Description: Called whenever the window is resized. It creates/loads video frames at the appropriate new size.
